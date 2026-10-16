@@ -1,0 +1,65 @@
+# ============ 密钥与环境变量（绝对不能提交！）============
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets.json
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# ============ IDE / 编辑器 ============
+.idea/
+.vscode/
+.junie/
+*.swp
+*.swo
+
+# ============ 模型与数据产物（体积大，不入库）============
+models/
+model_cache/
+logs/
+*.log
+*.db
+*.sqlite3
+
+# ============ 系统文件 ============
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============ 评测产物（可随时重新生成，不入库）============
+eval/.cache/
+eval/results/
+# 标注集里的 chunk_id 是本机 Milvus 的自增主键，换台机器就失效，故默认不入库；
+# 但当前主标注集需要随仓库分发（README 的评测结论依赖它，且可用 remap 重新锚定），
+# 因此白名单放行；换机器后执行 scripts/remap_gold.py 重新绑定 chunk_id 即可。
+# 历史备份（pre_expand / pre_remap / *.bak_*）保持忽略。
+eval/datasets/*.jsonl
+eval/datasets/*.csv
+!eval/datasets/qa_template.jsonl
+!eval/datasets/qa_hard.jsonl
+!eval/datasets/qa_hard_extra.jsonl
+!eval/datasets/qa_hard_extra2.jsonl
+
+# ============ Docker Compose 数据卷（一键启动中间件时生成）============
+volumes/
+
+# ============ 备份文件 ============
+*.bak
+*.bak-*
+*.bak_*
+*~

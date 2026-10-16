@@ -1,0 +1,134 @@
+# 履约知识助手 Warehouse-KB —— 一键启动全部中间件
+#
+# 用法：
+#   docker compose up -d            # 启动（首次会拉取镜像，约 3-5 分钟）
+#   docker compose ps               # 查看状态，等待全部 healthy
+#   docker compose down             # 停止（数据保留在 volumes/）
+#   docker compose down -v          # 停止并清空数据（谨慎）
+#
+# 启动后各服务地址：
+#   Milvus  19530   .env 中 MILVUS_URL=http://localhost:19530
+#   MinIO   API 9000 / 控制台 9001  （默认账号 minioadmin / minioadmin）
+#   MongoDB 27017   .env 中 MONGO_URL=mongodb://localhost:27017
+#   Attu    8006    Milvus 可视化界面（可选，需 --profile tools，见文件末尾）
+#
+# 注意：
+#   - 项目自带的两个 FastAPI 服务（导入 :8000、检索 :8001）由你在宿主机启动，
+#     不在本 compose 内；因此 Attu 刻意避开了 8000 端口。
+#   - Milvus 的 collection 与 MinIO 的 bucket 均由应用代码自动创建，
+#     无需手动初始化（见 processor/import_processor/nodes/node_import_milvus.py
+#     与 utils/minio_utils.py）。
+#   - 生产环境请务必修改 MinIO / MongoDB 的默认账号密码。
+
+services:
+  # ---------- Milvus 依赖：元数据存储 ----------
+  etcd:
+    container_name: zhiyuan-etcd
+    image: quay.io/coreos/etcd:v3.5.16
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ./volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - zhiyuan
+
+  # ---------- 对象存储：Milvus 内部使用 + 项目文档/图片共用 ----------
+  minio:
+    container_name: zhiyuan-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - zhiyuan
+
+  # ---------- 向量数据库 ----------
+  # 版本与开发环境实测一致（Milvus v2.5.5 + pymilvus 3.0.1）
+  milvus:
+    container_name: zhiyuan-milvus
+    image: milvusdb/milvus:v2.5.5
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      MINIO_REGION: us-east-1
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ./volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      etcd:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - zhiyuan
+
+  # ---------- 文档数据库：会话历史 ----------
+  mongo:
+    container_name: zhiyuan-mongo
+    image: mongo:7.0
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./volumes/mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - zhiyuan
+
+  # ---------- 可选：Milvus 可视化管理界面 ----------
+  # 默认不启动（避免镜像拉取失败影响核心服务）。需要时执行：
+  #   docker compose --profile tools up -d
+  # 浏览器打开 http://localhost:8006，连接地址填 milvus:19530
+  attu:
+    container_name: zhiyuan-attu
+    image: zilliz/attu:v2.5.5
+    profiles:
+      - tools
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "8006:3000"
+    depends_on:
+      milvus:
+        condition: service_started
+    networks:
+      - zhiyuan
+
+networks:
+  zhiyuan:
+    name: zhiyuan
