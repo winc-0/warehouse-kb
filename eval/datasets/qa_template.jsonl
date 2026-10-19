@@ -1,0 +1,14 @@
+// ===========================================================================
+// 评测集模板 —— 这个文件故意不可运行，用来展示字段格式。
+// chunk_id 必须来自 Milvus 真实主键，无法凭肉眼编造，所以这里放了占位符，
+// 校验会直接报错，避免你误用假数据跑出一份全 0 的报告。
+//
+// 生成真实标注集（三选一）：
+//   python eval/build_dataset.py generate  --per-item 8 --max-items 6
+//   python eval/build_dataset.py candidates --questions questions.txt
+//   （或手工按下面的字段格式写 JSONL）
+//
+// 完整字段说明：eval/README.md 与 eval/dataset.py 顶部注释。
+// ===========================================================================
+{"qid": "example1", "question": "CPD30 叉车的额定载荷是多少？", "item_names": ["把这里换成 Milvus 里真实的 item_name"], "ground_truth_chunk_ids": ["REPLACE_ME"], "reference_answer": "3000 kg，载荷中心距 500 mm。", "source": "manual"}
+{"qid": "example2", "question": "冷库报 E12 低压报警怎么处理？", "item_names": ["把这里换成 Milvus 里真实的 item_name"], "ground_truth_chunk_ids": ["REPLACE_ME"], "source": "manual"}
