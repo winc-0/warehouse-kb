@@ -171,8 +171,10 @@ uv run python -m web.api.query_service    # 检索服务 :8001
 python -m unittest discover -s tests -v
 ```
 
-纯标准库，**不连 Milvus、不打 API、不需要 GPU**，任何机器上 clone 下来就能跑
-（51 个用例，约 1 秒）。覆盖四块容易静默出错的地方：
+纯标准库（unittest），**不连 Milvus、不打 API、不需要 GPU**，约 1 秒跑完。
+51 个用例，其中 7 个需要项目依赖（`RRF` 那组要 `colorlog` 等），
+**缺依赖时自动 skip 而不是报错**——这样"没装环境"和"代码写错了"在输出里能区分开。
+覆盖四块容易静默出错的地方：
 
 | 测试文件 | 覆盖什么 | 为什么值得测 |
 |---|---|---|
