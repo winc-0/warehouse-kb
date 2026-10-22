@@ -6,23 +6,39 @@
 为了评测方便把召回重写一遍，结果消融结论跟线上行为对不上。
 所以这里的重点是**结构约束**——策略表完整、默认顺序固定、参数与生产一致；
 再加一个 RRF 的手算校验，因为融合顺序决定了后面所有指标。
+
+依赖说明：导入 `eval.strategies` 会连带拉起项目依赖（colorlog / pymilvus 等）。
+没装依赖时这一组整体 skip，而不是让 `python -m unittest` 报 import error ——
+这样"没装环境"和"代码写错了"在输出里能区分开。
 """
 
 import unittest
 
-from eval.strategies import (
-    DEFAULT_BASELINE,
-    DEFAULT_ORDER,
-    PER_REQUEST_LIMIT,
-    RANKER_WEIGHTS,
-    RRF_K,
-    RRF_MAX_RESULTS,
-    STRATEGIES,
-    resolve_strategies,
-)
+try:
+    from eval.strategies import (
+        DEFAULT_BASELINE,
+        DEFAULT_ORDER,
+        PER_REQUEST_LIMIT,
+        RANKER_WEIGHTS,
+        RRF_K,
+        RRF_MAX_RESULTS,
+        STRATEGIES,
+        resolve_strategies,
+    )
+
+    _IMPORT_ERROR = None
+except Exception as exc:  # noqa: BLE001 - 缺依赖的形态很多，统一降级为 skip
+    _IMPORT_ERROR = exc
+    DEFAULT_BASELINE = DEFAULT_ORDER = STRATEGIES = None  # type: ignore[assignment]
 
 
-class TestRegistry(unittest.TestCase):
+class _NeedsProjectDeps(unittest.TestCase):
+    def setUp(self):
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"缺少项目依赖，跳过：{_IMPORT_ERROR}")
+
+
+class TestRegistry(_NeedsProjectDeps):
     def test_six_ablation_groups(self):
         # 六组逐层累加：裸稠密 / 裸稀疏 / 混合 / 混合+HyDE+RRF / 重排 / 完整
         self.assertEqual(
@@ -46,7 +62,7 @@ class TestRegistry(unittest.TestCase):
                 self.assertTrue(strategy.description.strip(), "description 不能为空")
 
 
-class TestResolve(unittest.TestCase):
+class TestResolve(_NeedsProjectDeps):
     def test_none_returns_all_in_default_order(self):
         got = [s.key for s in resolve_strategies(None)]
         self.assertEqual(got, list(DEFAULT_ORDER))
@@ -60,7 +76,7 @@ class TestResolve(unittest.TestCase):
             resolve_strategies(["nope"])
 
 
-class TestProductionParity(unittest.TestCase):
+class TestProductionParity(_NeedsProjectDeps):
     """参数必须与线上一致——不一致就等于在评另一个系统。
 
     这些值改动时通常是"顺手调一下"，但那会让历史报告失去可比性，
@@ -82,13 +98,16 @@ class TestProductionParity(unittest.TestCase):
         self.assertEqual(RANKER_WEIGHTS, (0.8, 0.2))
 
 
-class TestRRFMerge(unittest.TestCase):
+class TestRRFMerge(_NeedsProjectDeps):
     """RRF 手算校验：score(d) = Σ weight / (k + rank)。"""
 
     def setUp(self):
+        super().setUp()
         # 延迟导入：NodeRrf 会拉起处理器依赖，模块顶层导入会让纯指标测试也变重
-        from processor.query_processor.nodes.node_rrf import NodeRrf
-
+        try:
+            from processor.query_processor.nodes.node_rrf import NodeRrf
+        except Exception as exc:  # noqa: BLE001
+            self.skipTest(f"缺少 processor 依赖，跳过：{exc}")
         self.merge = NodeRrf()._rrf_merge
 
     def test_scores_match_formula(self):
