@@ -31,8 +31,10 @@ from typing import Any, Dict, Iterable, List
 
 REQUIRED_FIELDS = ("qid", "question", "item_names", "ground_truth_chunk_ids")
 
-# 默认数据集路径
-DEFAULT_DATASET = Path(__file__).resolve().parent / "datasets" / "qa_template.jsonl"
+# 默认数据集路径：164 题标注集。
+# 注意别用 qa_template.jsonl —— 那是**字段模板**，只有 14 条，不带参数跑评测会静默
+# 只评 14 题然后生成一份看起来正常的报告，是最容易看走眼的坑。
+DEFAULT_DATASET = Path(__file__).resolve().parent / "datasets" / "qa_hard.jsonl"
 
 
 @dataclass
