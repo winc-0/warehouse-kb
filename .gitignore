@@ -52,8 +52,10 @@ eval/datasets/*.jsonl
 eval/datasets/*.csv
 !eval/datasets/qa_template.jsonl
 !eval/datasets/qa_hard.jsonl
-!eval/datasets/qa_hard_extra.jsonl
-!eval/datasets/qa_hard_extra2.jsonl
+# 注意：qa_hard_extra*.jsonl 是 scripts/gen_cover_all.py 的**中间产物**，
+# 由 scripts/merge_gold.py 合进 qa_hard.jsonl 之后就作废了，不要再放行。
+# 之前把 extra2 放行入库，结果仓库里同时存在两份 164 题、内容逐条相同的标注集
+# （除 qid 前缀 gen/cov 不同），看起来像 328 题，实际全是重复。
 
 # ============ Docker Compose 数据卷（一键启动中间件时生成）============
 volumes/

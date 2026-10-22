@@ -9,6 +9,14 @@
 
 ![整体架构](docs/images/architecture-overview.svg)
 
+## 关于这个仓库
+
+**履约知识助手是一个完整可运行的 RAG 知识库系统，可按本文档在本地部署复现。** 要点：
+
+- 检索主链路基于 LangGraph 编排：多格式文档导入 → 三路混合召回 → RRF 融合 → 精排 → SSE 流式问答。
+- 自带一套离线评测体系（`eval/`）：六组策略消融、配对 bootstrap、全局检索对照与标注集构建工具。
+- **评测数字都是实际跑出来的**，`eval/results/` 与 `eval/README.md` 里有对应的报告与复现命令，任何人都能按文档复跑核对。
+
 ## 目录
 
 - [项目简介](#项目简介)
@@ -157,6 +165,24 @@ uv run python -m web.api.query_service    # 检索服务 :8001
 - `web/page/import.html` —— 上传文档，查看导入流水线各节点的实时进度
 - `web/page/chat.html` —— 知识库问答（SSE 流式输出）
 
+### 测试
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+纯标准库，**不连 Milvus、不打 API、不需要 GPU**，任何机器上 clone 下来就能跑
+（51 个用例，约 1 秒）。覆盖四块容易静默出错的地方：
+
+| 测试文件 | 覆盖什么 | 为什么值得测 |
+|---|---|---|
+| `test_metrics.py` | Hit / Recall / Precision / MRR / nDCG / AP / bootstrap | 输出会直接变成 README 里的百分比，算错了也"看起来很正常" |
+| `test_dataset.py` | JSONL 读写、必填字段、重复 qid、空标注、默认数据集 | 校验一旦宽松，指标会在无人察觉的情况下失真 |
+| `test_strategies.py` | 六组策略表、默认顺序、与生产一致的参数、RRF 手算 | 最容易犯的错是"测的不是线上"，参数漂移会让历史报告不可比 |
+
+> 这些测的是**数字算得对不对、数据读得对不对**，不是检索效果本身——
+> 后者必须跑 `eval/run_eval.py` 走真实链路。
+
 ## 目录结构
 
 ```
@@ -166,6 +192,7 @@ zhiyuan/
 │   ├── import_processor/    # 导入流水线（LangGraph）：7 个节点
 │   └── query_processor/     # 检索流水线（LangGraph）：条件路由 + 三路并行召回
 ├── eval/                    # 离线检索评测：标注集 / 6 策略消融 / 显著性检验
+├── tests/                   # 单元测试（纯标准库，不连 Milvus / 不打 API）
 ├── web/
 │   ├── api/                 # FastAPI 服务（import_service / query_service）
 │   └── page/                # 前端页面（原生 HTML + JS）
@@ -294,6 +321,10 @@ EVAL_GLOBAL_SEARCH=1 uv run python eval/run_eval.py --dataset eval/datasets/qa_h
 
 ## 已知限制
 
+- **R@1 的绝对值离不开候选池大小**：按主体收敛后每题只 4~5 片候选，
+  「R@1 93.29%」的准确含义是「5 选 1 里选对 93%」；关掉过滤在 145 片池下是 80.49%。
+  **引用时必须带上池子大小**，要贴近真实全库检索的结论就看 80.49% 那列
+  （详见「检索评测 › 已知边界」第 1 条）
 - **指标只覆盖检索环节**。164 题测的是"该召回的切片召回了没有"，
   最终答案是否忠实于召回内容（faithfulness）、引用是否准确，目前只有 1 题的冒烟结果。
   **召对了不等于答对**，这两个环节的gap尚未量化
