@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -65,6 +66,29 @@ from eval.strategies import (  # noqa: E402
 )
 
 RESULTS_DIR = PROJECT_ROOT / "eval" / "results"
+
+
+def _git_commit() -> str:
+    """当前代码版本，写进报告头部，便于日后核对「这份数字是哪版代码跑出来的」。"""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _display_path(path: Path) -> str:
+    """报告里优先用仓库内相对路径，别把本机绝对路径带出去。"""
+    try:
+        return Path(path).resolve().relative_to(PROJECT_ROOT).as_posix()
+    except (ValueError, OSError):
+        return Path(path).as_posix()
 
 
 # --------------------------------------------------------------------------- #
@@ -315,7 +339,9 @@ def render_report(
     add("# 履约知识助手 Warehouse-KB · 检索链路消融评测报告")
     add("")
     add(f"- 评测时间：{now}")
-    add(f"- 数据集：`{dataset_path.as_posix()}`")
+    if _git_commit():
+        add(f"- 代码版本：`{_git_commit()}`")
+    add(f"- 数据集：`{_display_path(dataset_path)}`")
     add(f"- 样本数：{len(items)}（平均每题 {describe(list(items))['平均正确切片数']} 条正确切片）")
     add(f"- 截断位置 K：{', '.join(str(k) for k in ks)}；头号指标 K={headline_k}")
     add(f"- 基线策略：`{baseline}`（{results[baseline]['label'] if baseline in results else 'N/A'}）")
@@ -491,9 +517,9 @@ def render_report(
     add("## 六、复现命令")
     add("")
     add("```bash")
-    add(f"python eval/run_eval.py --dataset {dataset_path.as_posix()}"
+    add(f"python eval/run_eval.py --dataset {_display_path(dataset_path)}"
         + (f" --limit {args.limit}" if args.limit else "")
-        + (f" --strategies {','.join(args.strategies)}" if args.strategies else ""))
+        + (f" --strategies {args.strategies}" if args.strategies else ""))
     add("```")
     add("")
 
@@ -657,7 +683,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="履约知识助手检索链路消融评测",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--dataset", default="eval/datasets/qa_template.jsonl", help="JSONL 数据集路径")
+    parser.add_argument(
+        "--dataset",
+        default="eval/datasets/qa_hard.jsonl",
+        help="JSONL 数据集路径（默认 164 题标注集；qa_template.jsonl 只是字段模板，只有 14 条）",
+    )
     parser.add_argument("--strategies", default="", help="逗号分隔的策略 key（默认全部）")
     parser.add_argument("--baseline", default=DEFAULT_BASELINE, help=f"基线策略 key（默认 {DEFAULT_BASELINE}）")
     parser.add_argument("--limit", type=int, default=0, help="只跑前 N 题（0=全部）")
