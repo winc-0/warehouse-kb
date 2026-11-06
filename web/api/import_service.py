@@ -19,6 +19,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 
 from utils.minio_utils import get_minio_client
+from utils.upload_utils import UnsafeFilenameError, safe_upload_name
 from utils.task_utils import add_running_task, add_done_task, update_task_status, get_task_status, get_done_task_list, \
     get_running_task_list
 
@@ -111,11 +112,17 @@ async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile
     # 1. 构建本地存储根目录：项目根目录/doc/YYYYMMDD（按日期分层，方便管理）
     data_based_root_dir = os.getenv("DATA_BASED_ROOT_DIR")
     data_dir = os.path.join(data_based_root_dir, datetime.now().strftime("%Y%m%d"))
+    # 先校验全部文件名，避免一部分文件已经开始处理后才发现非法文件名
+    try:
+        safe_names = [safe_upload_name(file.filename) for file in files]
+    except UnsafeFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # 初始化任务ID列表，用于返回给前端（一个文件对应一个TaskID）
     task_ids = []
 
     # 2. 遍历处理每个上传的文件（多文件批量处理，各自独立生成TaskID）
-    for file in files:
+    for file, safe_name in zip(files, safe_names):
         # 生成全局唯一TaskID（UUID4），作为单个文件的全流程标识
         task_id = str(uuid.uuid4())
         task_ids.append(task_id)
@@ -128,7 +135,8 @@ async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile
         file_dir = os.path.join(data_dir, task_id)
         os.makedirs(file_dir, exist_ok=True)  # 目录不存在则创建，存在则不做处理
         # 构建上传文件的本地保存绝对路径
-        import_file_path = os.path.join(file_dir, file.filename)
+        # 只用校验过的文件名，客户端传来的路径部分一律丢掉
+        import_file_path = os.path.join(file_dir, safe_name)
 
         # 5. 将上传的文件保存到本地临时目录（后续MinIO上传/文件解析均基于此文件）
         with open(import_file_path, "wb") as file_buffer:
@@ -136,8 +144,8 @@ async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile
         logger.info(f"[{task_id}] 文件已保存至本地，路径：{import_file_path}")
 
         # 6. 将本地文件上传至MinIO对象存储，做持久化保存
-        # 构建MinIO中的文件对象名：pdf_files/YYYYMMDD/文件名（按日期分层，和本地一致）
-        minio_object_name = f"pdf_files/{datetime.now().strftime('%Y%m%d')}/{file.filename}"
+        # 构建MinIO中的文件对象名：pdf_files/YYYYMMDD/TaskID/文件名，和本地目录一致，同名文件也不会互相覆盖
+        minio_object_name = f"pdf_files/{datetime.now().strftime('%Y%m%d')}/{task_id}/{safe_name}"
         try:
             # 获取MinIO客户端实例
             minio_client = get_minio_client()
